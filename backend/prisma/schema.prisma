@@ -1,0 +1,570 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User model for authentication
+model User {
+  id                    String      @id @default(cuid())
+  email                 String      @unique
+  password              String      // bcrypt hashed
+  firstName             String
+  lastName              String
+  role                  UserRole    @default(USER)
+  status                UserStatus  @default(ACTIVE)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  // Relations
+  projects              ProjectMember[]
+  ownedProjects         Project[]       @relation("projectOwner")
+  conversations         Conversation[]  @relation("conversationUser")
+  messages              Message[]       @relation("messageUser")
+  tasksAssigned         Task[]          @relation("taskAssignedUser")
+  notifications         Notification[]
+  artifacts             GeneratedArtifact[] @relation("artifactCreatedBy")
+
+  @@index([email])
+  @@index([status])
+}
+
+enum UserRole {
+  ADMIN
+  PROJECT_MANAGER
+  DEVELOPER
+  QA
+  USER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+// Project model for managing projects
+model Project {
+  id                    String      @id @default(cuid())
+  name                  String
+  description           String?
+  domain                String      // e.g., Banking, HealthCare, ECommerce
+  status                ProjectStatus  @default(PLANNING)
+  ownerId               String
+  owner                 User        @relation("projectOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  // Relations
+  members               ProjectMember[]
+  documents             ProjectDocument[]
+  requirements          Requirement[]
+  tasks                 Task[]
+  milestones            Milestone[]
+  agentRuns             AgentRun[]
+  conversations         Conversation[]  @relation("projectConversation")
+  artifacts             GeneratedArtifact[] @relation("projectArtifact")
+  activities            Activity[]
+
+  @@index([ownerId])
+  @@index([status])
+}
+
+enum ProjectStatus {
+  PLANNING
+  REQUIREMENTS_ANALYSIS
+  DESIGN
+  DEVELOPMENT
+  TESTING
+  DEPLOYMENT
+  MAINTENANCE
+  COMPLETED
+  ARCHIVED
+}
+
+// Project membership
+model ProjectMember {
+  id                    String      @id @default(cuid())
+  projectId             String
+  userId                String
+  role                  ProjectMemberRole  @default(DEVELOPER)
+  joinedAt              DateTime    @default(now())
+
+  project               Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user                  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([projectId])
+  @@index([userId])
+}
+
+enum ProjectMemberRole {
+  OWNER
+  MANAGER
+  LEAD
+  DEVELOPER
+  QA
+  VIEWER
+}
+
+// Project documents (SRS files)
+model ProjectDocument {
+  id                    String      @id @default(cuid())
+  projectId             String
+  fileName              String
+  originalFileName      String
+  fileType              String      // e.g., 'pdf', 'docx'
+  filePath              String      // local storage path or cloud storage reference
+  fileSize              Int         // in bytes
+  uploadedById          String?
+  processingStatus      DocumentProcessingStatus  @default(PENDING)
+  uploadedAt            DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  project               Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  requirements          Requirement[]  @relation("documentRequirement")
+  artifacts             GeneratedArtifact[]  @relation("documentArtifact")
+
+  @@index([projectId])
+  @@index([processingStatus])
+}
+
+enum DocumentProcessingStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// Requirements extracted from documents
+model Requirement {
+  id                    String      @id @default(cuid())
+  projectId             String
+  documentId            String?
+  reqId                 String      // e.g., FR-001, NFR-002
+  title                 String
+  description           String?
+  type                  RequirementType  @default(FUNCTIONAL)
+  priority              Priority    @default(MEDIUM)
+  status                RequirementStatus  @default(DRAFT)
+  sourceDocumentRef     String?     // reference to specific section in document
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  project               Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  document              ProjectDocument?  @relation("documentRequirement", fields: [documentId], references: [id], onDelete: SetNull)
+  userStories           UserStory[]
+  tasks                 Task[]      @relation("requirementTask")
+  artifacts             GeneratedArtifact[]  @relation("requirementArtifact")
+  dependencies          RequirementDependency[]  @relation("from")
+  dependents            RequirementDependency[]  @relation("to")
+
+  @@index([projectId])
+  @@index([status])
+  @@index([priority])
+}
+
+enum RequirementType {
+  FUNCTIONAL
+  NON_FUNCTIONAL
+  CONSTRAINT
+  BUSINESS
+  TECHNICAL
+}
+
+enum Priority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum RequirementStatus {
+  DRAFT
+  REVIEW
+  APPROVED
+  IMPLEMENTED
+  TESTED
+  DEPLOYED
+  ARCHIVED
+}
+
+// Requirements dependencies
+model RequirementDependency {
+  id                    String      @id @default(cuid())
+  fromId                String
+  toId                  String
+  dependencyType        String      // e.g., 'blocks', 'depends_on', 'related_to'
+
+  from                  Requirement @relation("from", fields: [fromId], references: [id], onDelete: Cascade)
+  to                    Requirement @relation("to", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@unique([fromId, toId])
+  @@index([fromId])
+  @@index([toId])
+}
+
+// User stories derived from requirements
+model UserStory {
+  id                    String      @id @default(cuid())
+  requirementId         String
+  title                 String
+  description           String
+  asA                   String      // "As a..."
+  iWant                 String      // "I want..."
+  soThat                String      // "So that..."
+  priority              Priority    @default(MEDIUM)
+  status                UserStoryStatus  @default(DRAFT)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  requirement           Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  acceptanceCriteria    AcceptanceCriteria[]
+  artifacts             GeneratedArtifact[]  @relation("userStoryArtifact")
+
+  @@index([requirementId])
+  @@index([status])
+}
+
+enum UserStoryStatus {
+  DRAFT
+  READY
+  IN_PROGRESS
+  COMPLETED
+  ARCHIVED
+}
+
+// Acceptance criteria for user stories
+model AcceptanceCriteria {
+  id                    String      @id @default(cuid())
+  userStoryId           String
+  criterion             String      // "Given/When/Then" format
+  order                 Int         @default(0)
+  status                AcceptanceCriteriaStatus  @default(OPEN)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  userStory             UserStory   @relation(fields: [userStoryId], references: [id], onDelete: Cascade)
+  artifacts             GeneratedArtifact[]  @relation("criteriaArtifact")
+
+  @@index([userStoryId])
+}
+
+enum AcceptanceCriteriaStatus {
+  OPEN
+  IN_PROGRESS
+  ACCEPTED
+  REJECTED
+  ARCHIVED
+}
+
+// Tasks for project management
+model Task {
+  id                    String      @id @default(cuid())
+  projectId             String
+  requirementId         String?
+  title                 String
+  description           String?
+  status                TaskStatus  @default(OPEN)
+  priority              Priority    @default(MEDIUM)
+  assignedToUserId      String?
+  assignedToAgentId     String?
+  milestoneId           String?
+  sprintId              String?
+  estimatedEffort       Int?        // in story points or hours
+  actualEffort          Int?
+  dueDate               DateTime?
+  startDate             DateTime?
+  completedAt           DateTime?
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  project               Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  requirement           Requirement?  @relation("requirementTask", fields: [requirementId], references: [id], onDelete: SetNull)
+  assignedUser          User?       @relation("taskAssignedUser", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  assignedAgent         Agent?      @relation(fields: [assignedToAgentId], references: [id], onDelete: SetNull)
+  milestone             Milestone?  @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  dependencies          TaskDependency[]  @relation("taskFrom")
+  dependents            TaskDependency[]  @relation("taskTo")
+  artifacts             GeneratedArtifact[]  @relation("taskArtifact")
+
+  @@index([projectId])
+  @@index([status])
+  @@index([assignedToUserId])
+  @@index([assignedToAgentId])
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  BLOCKED
+  REVIEW
+  COMPLETED
+  CANCELLED
+}
+
+// Task dependencies
+model TaskDependency {
+  id                    String      @id @default(cuid())
+  fromTaskId            String
+  toTaskId              String
+  dependencyType        String      // e.g., 'blocks', 'depends_on'
+
+  from                  Task        @relation("taskFrom", fields: [fromTaskId], references: [id], onDelete: Cascade)
+  to                    Task        @relation("taskTo", fields: [toTaskId], references: [id], onDelete: Cascade)
+
+  @@unique([fromTaskId, toTaskId])
+}
+
+// Milestones for project tracking
+model Milestone {
+  id                    String      @id @default(cuid())
+  projectId             String
+  name                  String
+  description           String?
+  targetDate            DateTime
+  status                MilestoneStatus  @default(PLANNED)
+  order                 Int         @default(0)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  project               Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks                 Task[]
+
+  @@index([projectId])
+  @@index([status])
+}
+
+enum MilestoneStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  DELAYED
+  CANCELLED
+}
+
+// AI Agents
+model Agent {
+  id                    String      @id @default(cuid())
+  name                  String
+  type                  AgentType   @default(GENERIC)
+  description           String?
+  status                AgentStatus  @default(INACTIVE)
+  configuration         Json?       // JSON configuration for agent-specific settings
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  agentRuns             AgentRun[]
+  tasks                 Task[]
+  conversations         Conversation[]  @relation("agentConversation")
+
+  @@index([type])
+  @@index([status])
+}
+
+enum AgentType {
+  REQUIREMENT_ANALYST
+  PROJECT_MANAGER
+  DEVELOPER
+  QA_ENGINEER
+  GENERIC
+}
+
+enum AgentStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+}
+
+// Agent Runs/Executions
+model AgentRun {
+  id                    String      @id @default(cuid())
+  projectId             String
+  agentId               String
+  status                AgentRunStatus  @default(PENDING)
+  input                 Json?       // Input data
+  output                Json?       // Output data
+  error                 String?     // Error message if failed
+  startedAt             DateTime?
+  completedAt           DateTime?
+  createdAt             DateTime    @default(now())
+
+  project               Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  agent                 Agent       @relation(fields: [agentId], references: [id], onDelete: Restrict)
+  artifacts             GeneratedArtifact[]  @relation("agentRunArtifact")
+
+  @@index([projectId])
+  @@index([agentId])
+  @@index([status])
+}
+
+enum AgentRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+// Conversations (for AI interactions)
+model Conversation {
+  id                    String      @id @default(cuid())
+  projectId             String?
+  userId                String?
+  agentId               String?
+  title                 String?
+  context               Json?       // Additional context
+  status                ConversationStatus  @default(ACTIVE)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  project               Project?    @relation("projectConversation", fields: [projectId], references: [id], onDelete: Cascade)
+  user                  User?       @relation("conversationUser", fields: [userId], references: [id], onDelete: Cascade)
+  agent                 Agent?      @relation("agentConversation", fields: [agentId], references: [id], onDelete: Cascade)
+  messages              Message[]
+
+  @@index([projectId])
+  @@index([userId])
+  @@index([status])
+}
+
+enum ConversationStatus {
+  ACTIVE
+  ARCHIVED
+  CLOSED
+}
+
+// Messages in conversations
+model Message {
+  id                    String      @id @default(cuid())
+  conversationId        String
+  senderId              String?
+  senderType            SenderType  @default(USER) // USER, AI_AGENT, SYSTEM
+  content               String
+  metadata              Json?       // Additional metadata
+  createdAt             DateTime    @default(now())
+
+  conversation          Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender                User?       @relation("messageUser", fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId])
+  @@index([senderId])
+}
+
+enum SenderType {
+  USER
+  AI_AGENT
+  SYSTEM
+}
+
+// Generated Artifacts from AI
+model GeneratedArtifact {
+  id                    String      @id @default(cuid())
+  projectId             String?
+  agentRunId            String?
+  requirementId         String?
+  userStoryId           String?
+  criteriaId            String?
+  taskId                String?
+  documentId            String?
+  createdById           String?
+  artifactType          ArtifactType  @default(ANALYSIS)
+  title                 String
+  description           String?
+  content               String      // Main artifact content
+  metadata              Json?       // Additional metadata
+  status                ArtifactStatus  @default(DRAFT)
+  version               Int         @default(1)
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  project               Project?    @relation("projectArtifact", fields: [projectId], references: [id], onDelete: Cascade)
+  agentRun              AgentRun?   @relation("agentRunArtifact", fields: [agentRunId], references: [id], onDelete: SetNull)
+  requirement           Requirement?  @relation("requirementArtifact", fields: [requirementId], references: [id], onDelete: SetNull)
+  userStory             UserStory?  @relation("userStoryArtifact", fields: [userStoryId], references: [id], onDelete: SetNull)
+  criteria              AcceptanceCriteria?  @relation("criteriaArtifact", fields: [criteriaId], references: [id], onDelete: SetNull)
+  task                  Task?       @relation("taskArtifact", fields: [taskId], references: [id], onDelete: SetNull)
+  document              ProjectDocument?  @relation("documentArtifact", fields: [documentId], references: [id], onDelete: SetNull)
+  createdBy             User?       @relation("artifactCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([projectId])
+  @@index([agentRunId])
+  @@index([artifactType])
+  @@index([status])
+}
+
+enum ArtifactType {
+  ANALYSIS
+  USER_STORY
+  ACCEPTANCE_CRITERIA
+  PROJECT_PLAN
+  TASK_LIST
+  CODE_SUGGESTION
+  TEST_CASE
+  TEST_REPORT
+  DOCUMENTATION
+  OTHER
+}
+
+enum ArtifactStatus {
+  DRAFT
+  REVIEW
+  APPROVED
+  IMPLEMENTED
+  ARCHIVED
+}
+
+// Notifications for users
+model Notification {
+  id                    String      @id @default(cuid())
+  userId                String
+  type                  NotificationType  @default(GENERAL)
+  title                 String
+  message               String
+  relatedEntityId       String?     // Reference to project, task, etc.
+  relatedEntityType     String?     // Type of entity (PROJECT, TASK, REQUIREMENT, etc.)
+  isRead                Boolean     @default(false)
+  readAt                DateTime?
+  createdAt             DateTime    @default(now())
+
+  user                  User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+enum NotificationType {
+  GENERAL
+  PROJECT_UPDATE
+  TASK_ASSIGNMENT
+  REQUIREMENT_CHANGE
+  AGENT_EXECUTION
+  DOCUMENT_PROCESSED
+  MILESTONE_UPDATE
+}
+
+// Activity/Audit Log
+model Activity {
+  id                    String      @id @default(cuid())
+  projectId             String
+  entityType            String      // PROJECT, TASK, REQUIREMENT, etc.
+  entityId              String
+  action                String      // CREATED, UPDATED, DELETED, etc.
+  changes               Json?       // What changed
+  performedBy           String?
+  metadata              Json?
+  createdAt             DateTime    @default(now())
+
+  project               Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([entityType])
+  @@index([createdAt])
+}
