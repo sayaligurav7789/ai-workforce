@@ -1,4 +1,3 @@
-@"
 node_modules/
 .env
 .env.*
@@ -8,4 +7,7 @@ build/
 .vscode/
 .idea/
 *.log
-"@ | Out-File -Encoding utf8 .gitignore
+data/
+backend/data/
+__pycache__/
+*.py[cod]

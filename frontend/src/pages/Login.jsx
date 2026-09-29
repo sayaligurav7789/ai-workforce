@@ -1,18 +1,21 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
+import apiService from '../services/api'
 
 function Login() {
   const navigate = useNavigate()
+  const [isRegistering, setIsRegistering] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [displayName, setDisplayName] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const handleLogin = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
-    
     if (!email || !password) {
       setError('Please fill in all fields')
       return
@@ -23,9 +26,30 @@ function Login() {
       return
     }
 
-    localStorage.setItem('isAuthenticated', 'true')
-    localStorage.setItem('userName', email.split('@')[0])
-    navigate('/dashboard')
+    if (isRegistering && password.length < 8) {
+      setError('Password must be at least 8 characters')
+      return
+    }
+
+    setIsSubmitting(true)
+    setError('')
+    try {
+      const result = isRegistering
+        ? await apiService.auth.register({
+            email,
+            password,
+            display_name: displayName || email.split('@')[0],
+          })
+        : await apiService.auth.login({ email, password })
+      localStorage.setItem('accessToken', result.access_token)
+      localStorage.setItem('isAuthenticated', 'true')
+      localStorage.setItem('userName', result.user.display_name)
+      navigate('/dashboard')
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -58,14 +82,27 @@ function Login() {
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-bg-light">
         <div className="w-full max-w-md">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-text-primary mb-2">Welcome Back</h1>
-            <p className="text-text-secondary">Sign in to your account</p>
+            <h1 className="text-3xl font-bold text-text-primary mb-2">{isRegistering ? 'Create Account' : 'Welcome Back'}</h1>
+            <p className="text-text-secondary">{isRegistering ? 'Create your AI Workforce account' : 'Sign in to your account'}</p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-6">
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
                 {error}
+              </div>
+            )}
+
+            {isRegistering && (
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-2">Display Name</label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  className="input-field"
+                  placeholder="Your name"
+                />
               </div>
             )}
 
@@ -115,13 +152,24 @@ function Login() {
 
             <button
               type="submit"
+              disabled={isSubmitting}
               className="btn-primary w-full"
             >
-              Sign In
+              {isSubmitting ? 'Connecting...' : isRegistering ? 'Create Account' : 'Sign In'}
             </button>
 
             <p className="text-center text-text-secondary text-sm">
-              Don't have an account? <a href="#" className="text-primary hover:text-primary-dark font-medium">Sign Up</a>
+              {isRegistering ? 'Already have an account? ' : "Don't have an account? "}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRegistering(!isRegistering)
+                  setError('')
+                }}
+                className="text-primary hover:text-primary-dark font-medium"
+              >
+                {isRegistering ? 'Sign In' : 'Sign Up'}
+              </button>
             </p>
           </form>
         </div>

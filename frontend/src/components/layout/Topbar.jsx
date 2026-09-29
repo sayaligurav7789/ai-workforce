@@ -9,6 +9,7 @@ function Topbar({ onMenuClick }) {
 
   const handleLogout = () => {
     localStorage.removeItem('isAuthenticated')
+    localStorage.removeItem('accessToken')
     localStorage.removeItem('userName')
     navigate('/login')
   }

@@ -1,7 +1,12 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const frontendRoot = path.dirname(fileURLToPath(import.meta.url))
+
 export default {
   content: [
-    "./index.html",
-    "./src/**/*.{js,jsx}"
+    path.join(frontendRoot, 'index.html'),
+    path.join(frontendRoot, 'src/**/*.{js,jsx}'),
   ],
   theme: {
     extend: {
