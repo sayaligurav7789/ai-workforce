@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 
 from ..config import Settings
 from ..schemas import RequirementsAnalysis
@@ -27,15 +28,19 @@ class GeminiProvider(LLMProvider):
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         if not texts:
             return []
-        try:
-            response = self._client.models.embed_content(
-                model=self._embedding_model,
-                contents=texts,
-            )
-            return [list(embedding.values) for embedding in response.embeddings]
-        except Exception as exc:
-            logger.exception("Gemini embedding request failed")
-            raise ProviderConfigurationError(f"Embedding provider failed: {exc}") from exc
+        for attempt in range(2):
+            try:
+                response = self._client.models.embed_content(
+                    model=self._embedding_model,
+                    contents=texts,
+                )
+                return [list(embedding.values) for embedding in response.embeddings]
+            except Exception as exc:
+                if attempt == 0 and _is_retryable(exc):
+                    time.sleep(1.5)
+                    continue
+                logger.exception("Gemini embedding request failed")
+                raise ProviderConfigurationError(f"Embedding provider failed: {exc}") from exc
 
     def generate_analysis(self, project_name: str, project_description: str, contexts: list[dict]) -> RequirementsAnalysis:
         context_text = _format_contexts(contexts)
@@ -49,29 +54,35 @@ priorities, non-functional requirements, constraints, or risks. Label inferred
 priorities as INFERRED and use ambiguities for missing details. Every source reference
 must exactly match a document/page/source in the supplied excerpts. Use empty lists
 when the SRS does not support an artifact. Generate user stories and acceptance
-criteria only from supported requirements.
+criteria only from supported requirements. For each supported user story, create
+at least one concrete acceptance criterion when the SRS states observable behavior.
+Do not leave acceptance_criteria empty when the supplied requirements support one.
 
 Return JSON matching the RequirementsAnalysis schema exactly.
 
 RETRIEVED SRS EXCERPTS:
 {context_text}
 """
-        try:
-            from google.genai import types
+        for attempt in range(2):
+            try:
+                from google.genai import types
 
-            response = self._client.models.generate_content(
-                model=self._model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=RequirementsAnalysis,
-                    temperature=0.1,
-                ),
-            )
-            return RequirementsAnalysis.model_validate(json.loads(response.text))
-        except Exception as exc:
-            logger.exception("Gemini structured analysis failed")
-            raise ProviderConfigurationError(f"Requirements analysis failed: {exc}") from exc
+                response = self._client.models.generate_content(
+                    model=self._model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=_gemini_response_schema(),
+                        temperature=0.1,
+                    ),
+                )
+                return RequirementsAnalysis.model_validate(json.loads(response.text))
+            except Exception as exc:
+                if attempt == 0 and _is_retryable(exc):
+                    time.sleep(1.5)
+                    continue
+                logger.exception("Gemini structured analysis failed")
+                raise ProviderConfigurationError(f"Requirements analysis failed: {exc}") from exc
 
     def answer_question(self, question: str, contexts: list[dict]) -> str:
         prompt = f"""
@@ -84,19 +95,46 @@ Question: {question}
 RETRIEVED SRS EXCERPTS:
 {_format_contexts(contexts)}
 """
-        try:
-            response = self._client.models.generate_content(
-                model=self._model,
-                contents=prompt,
-                config={"temperature": 0.1},
-            )
-            return response.text.strip()
-        except Exception as exc:
-            logger.exception("Gemini RAG answer failed")
-            raise ProviderConfigurationError(f"RAG answer failed: {exc}") from exc
+        for attempt in range(2):
+            try:
+                response = self._client.models.generate_content(
+                    model=self._model,
+                    contents=prompt,
+                    config={"temperature": 0.1},
+                )
+                return response.text.strip()
+            except Exception as exc:
+                if attempt == 0 and _is_retryable(exc):
+                    time.sleep(1.5)
+                    continue
+                logger.exception("Gemini RAG answer failed")
+                raise ProviderConfigurationError(f"RAG answer failed: {exc}") from exc
 
 
 def _format_contexts(contexts: list[dict]) -> str:
     return "\n\n".join(
         f"[{item['filename']} page {item['page']} | {item['source']}]\n{item['text']}" for item in contexts
     )
+
+
+def _is_retryable(error: Exception) -> bool:
+    message = str(error).upper()
+    return any(marker in message for marker in ("503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "DEADLINE"))
+
+
+def _gemini_response_schema() -> dict:
+    """Gemini rejects Pydantic defaults even though they are valid JSON Schema."""
+    schema = RequirementsAnalysis.model_json_schema()
+
+    def remove_defaults(value):
+        if isinstance(value, dict):
+            return {
+                key: remove_defaults(item)
+                for key, item in value.items()
+                if key != "default"
+            }
+        if isinstance(value, list):
+            return [remove_defaults(item) for item in value]
+        return value
+
+    return remove_defaults(schema)

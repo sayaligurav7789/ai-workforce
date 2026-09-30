@@ -88,10 +88,20 @@ def _retrieve_context(provider: LLMProvider, vector_store: ProjectVectorStore, p
 
 
 def _keep_only_real_sources(analysis: RequirementsAnalysis, contexts: list[dict]) -> RequirementsAnalysis:
-    valid = {(item["filename"], item["page"], item["source"]) for item in contexts}
+    valid_by_document_page = {
+        (item["filename"], item["page"]): item["source"]
+        for item in contexts
+    }
 
     def clean(refs):
-        return [ref for ref in refs if (ref.document, ref.page, ref.source) in valid]
+        cleaned = []
+        seen = set()
+        for ref in refs:
+            actual_source = valid_by_document_page.get((ref.document, ref.page))
+            if actual_source and (ref.document, ref.page) not in seen:
+                cleaned.append(ref.model_copy(update={"source": actual_source}))
+                seen.add((ref.document, ref.page))
+        return cleaned
 
     analysis.source_references = clean(analysis.source_references)
     for item in analysis.functional_requirements:

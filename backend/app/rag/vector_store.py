@@ -1,6 +1,10 @@
 import logging
+import os
 from dataclasses import dataclass
 
+# Chroma's anonymous telemetry is not needed by this application and can emit
+# incompatible client warnings in restricted environments.
+os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
 import chromadb
 
 from ..config import Settings
