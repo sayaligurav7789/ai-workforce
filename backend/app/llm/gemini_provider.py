@@ -2,6 +2,8 @@ import json
 import logging
 import time
 
+from pydantic import ValidationError
+
 from ..config import Settings
 from ..schemas import RequirementsAnalysis
 from .base import LLMProvider
@@ -74,11 +76,15 @@ RETRIEVED SRS EXCERPTS:
                         response_mime_type="application/json",
                         response_schema=_gemini_response_schema(),
                         temperature=0.1,
+                        max_output_tokens=12000,
                     ),
                 )
-                return RequirementsAnalysis.model_validate(json.loads(response.text))
+                parsed = getattr(response, "parsed", None)
+                if parsed is None:
+                    parsed = json.loads(response.text)
+                return RequirementsAnalysis.model_validate(parsed)
             except Exception as exc:
-                if attempt == 0 and _is_retryable(exc):
+                if attempt == 0 and (_is_retryable(exc) or isinstance(exc, (json.JSONDecodeError, ValidationError))):
                     time.sleep(1.5)
                     continue
                 logger.exception("Gemini structured analysis failed")
