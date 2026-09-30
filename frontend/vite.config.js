@@ -8,6 +8,7 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5000,
     open: false,
+    allowedHosts: true,
     proxy: {
       '/api': 'http://127.0.0.1:8000',
       '/health': 'http://127.0.0.1:8000',
