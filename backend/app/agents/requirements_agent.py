@@ -92,15 +92,31 @@ def _keep_only_real_sources(analysis: RequirementsAnalysis, contexts: list[dict]
         (item["filename"], item["page"]): item["source"]
         for item in contexts
     }
+    contexts_by_page: dict[int, list[dict]] = {}
+    for item in contexts:
+        contexts_by_page.setdefault(item["page"], []).append(item)
 
     def clean(refs):
         cleaned = []
         seen = set()
         for ref in refs:
-            actual_source = valid_by_document_page.get((ref.document, ref.page))
-            if actual_source and (ref.document, ref.page) not in seen:
-                cleaned.append(ref.model_copy(update={"source": actual_source}))
-                seen.add((ref.document, ref.page))
+            actual_document_page = (ref.document, ref.page)
+            actual_source = valid_by_document_page.get(actual_document_page)
+            if not actual_source:
+                page_matches = contexts_by_page.get(ref.page, [])
+                if len(page_matches) == 1:
+                    actual_document_page = (page_matches[0]["filename"], ref.page)
+                    actual_source = page_matches[0]["source"]
+            if actual_source and actual_document_page not in seen:
+                cleaned.append(
+                    ref.model_copy(
+                        update={
+                            "document": actual_document_page[0],
+                            "source": actual_source,
+                        }
+                    )
+                )
+                seen.add(actual_document_page)
         return cleaned
 
     analysis.source_references = clean(analysis.source_references)

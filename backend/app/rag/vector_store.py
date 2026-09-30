@@ -6,6 +6,7 @@ from dataclasses import dataclass
 # incompatible client warnings in restricted environments.
 os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
 import chromadb
+from chromadb.config import Settings as ChromaSettings
 
 from ..config import Settings
 
@@ -24,7 +25,10 @@ class RetrievedChunk:
 class ProjectVectorStore:
     def __init__(self, settings: Settings):
         settings.ensure_directories()
-        self._client = chromadb.PersistentClient(path=settings.chroma_persist_directory)
+        self._client = chromadb.PersistentClient(
+            path=settings.chroma_persist_directory,
+            settings=ChromaSettings(anonymized_telemetry=False),
+        )
 
     def _collection(self, project_id: int):
         return self._client.get_or_create_collection(
