@@ -1,1 +1,2 @@
 - [Gemini model availability](gemini-model-availability.md) — validate the account's live model list when a configured Gemini model is retired or overloaded.
+- [Python wheel compatibility](python-wheel-compatibility.md) — choose the supported Python runtime when pinned native wheels do not support the default interpreter.
