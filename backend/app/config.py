@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     max_upload_size_bytes: int = 10 * 1024 * 1024
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24
-    gemini_model: str = "gemini-3-flash-preview"
+    gemini_model: str = "gemini-3.1-flash-lite"
     gemini_embedding_model: str = "gemini-embedding-001"
     environment: str = "development"
 

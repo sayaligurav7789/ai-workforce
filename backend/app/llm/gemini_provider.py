@@ -76,7 +76,7 @@ RETRIEVED SRS EXCERPTS:
                         response_mime_type="application/json",
                         response_schema=_gemini_response_schema(),
                         temperature=0.1,
-                        max_output_tokens=12000,
+                        max_output_tokens=16000,
                     ),
                 )
                 parsed = getattr(response, "parsed", None)
