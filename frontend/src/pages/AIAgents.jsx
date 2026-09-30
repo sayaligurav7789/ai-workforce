@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { MessageCircle, Zap, BookOpen, CheckCircle, Play, AlertCircle } from 'lucide-react'
 import { agents } from '../data/agents'
 import apiService from '../services/api'
+import AnalysisResults from '../components/AnalysisResults'
 
 function AIAgents() {
   const [projects, setProjects] = useState([])
@@ -104,18 +105,18 @@ function AIAgents() {
         })}
       </div>
 
-      {analysis?.latest_agent_run?.status === 'COMPLETED' && (
-        <div className="card p-6 mb-8">
-          <h2 className="text-lg font-bold text-text-primary mb-3">Latest Requirements Analysis</h2>
-          <p className="text-text-secondary mb-4">{analysis.project_summary.summary}</p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <Metric label="Functional requirements" value={analysis.functional_requirements.length} />
-            <Metric label="User stories" value={analysis.user_stories.length} />
-            <Metric label="Acceptance criteria" value={analysis.acceptance_criteria.length} />
-            <Metric label="Ambiguities" value={analysis.ambiguities.length} />
-          </div>
+      {analysis?.latest_agent_run?.status === 'COMPLETED' ? (
+        <div className="mb-8">
+          <AnalysisResults analysis={analysis} />
         </div>
-      )}
+      ) : selectedProjectId ? (
+        <div className="card p-6 mb-8">
+          <h2 className="font-semibold text-text-primary">No saved analysis yet</h2>
+          <p className="mt-1 text-sm text-text-secondary">
+            Upload and process an SRS for this project, then run the Requirements Analyst to save results to PostgreSQL.
+          </p>
+        </div>
+      ) : null}
 
       <div className="card p-6">
         <h2 className="text-lg font-bold text-text-primary mb-6">Agent Activity</h2>
@@ -131,10 +132,6 @@ function AIAgents() {
       </div>
     </div>
   )
-}
-
-function Metric({ label, value }) {
-  return <div className="bg-bg-light rounded-lg p-4"><p className="text-2xl font-bold text-primary">{value}</p><p className="text-xs text-text-secondary mt-1">{label}</p></div>
 }
 
 export default AIAgents
